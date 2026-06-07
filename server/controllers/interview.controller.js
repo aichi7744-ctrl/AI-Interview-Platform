@@ -1,5 +1,5 @@
 import fs from "fs";
-import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import { PDFParse } from "pdf-parse";
 import { askAi } from "../services/openRouter.services.js";
 import Interview from "../models/interview.model.js";
 import User from "../models/user.model.js";
@@ -12,21 +12,10 @@ export const analyzeResume = async (req, res) => {
     const filePath = req.file.path;
 
     const fileBuffer = await fs.promises.readFile(filePath);
-    const unit8Array = new Uint8Array(fileBuffer);
 
-    const pdf = await pdfjsLib.getDocument({ data: unit8Array }).promise;
+    const data = await pdfParse(fileBuffer);
 
-    let resumeText = "";
-    // Extract text from all pages
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      const page = await pdf.getPage(pageNum);
-
-      const content = await page.getTextContent();
-
-      const pageText = content.items.map((item) => item.str).join(" ");
-
-      resumeText += pageText + "\n";
-    }
+    let resumeText = data.text;
 
     resumeText = resumeText.replace(/\s+/g, " ").trim();
 
@@ -58,7 +47,9 @@ Return strictly JSON:
       .replace(/```/g, "")
       .trim();
     const parsed = JSON.parse(cleanedResponse);
-    fs.unlinkSync(filePath);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
 
     res.json({
       role: parsed.role,
@@ -345,14 +336,12 @@ Answer: ${answer.trim()}
     question.score =
       Number(parsed.finalScore) ||
       Math.round(
-        (
-          (Number(parsed.confidence) || 0) +
+        ((Number(parsed.confidence) || 0) +
           (Number(parsed.communication) || 0) +
-          (Number(parsed.correctness) || 0)
-        ) / 3
+          (Number(parsed.correctness) || 0)) /
+          3,
       );
-    question.feedback =
-      parsed.feedback || "Answer evaluated successfully.";
+    question.feedback = parsed.feedback || "Answer evaluated successfully.";
 
     // Important: mark nested object as modified
     interview.markModified("questions");
